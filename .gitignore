@@ -1,3 +1,9 @@
+# Data files
+data/images/*
+data/labels/*
+data/SkidSteer_2019-08.csv
+data/SkidSteer_2019-08.xlsx
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
