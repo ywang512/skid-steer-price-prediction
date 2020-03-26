@@ -4,6 +4,9 @@ data/labels/*
 data/SkidSteer_2019-08.csv
 data/SkidSteer_2019-08.xlsx
 
+# torch model files
+*.pt
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
