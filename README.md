@@ -2,7 +2,7 @@
 
 This repo contains all the necessary codes for building this model. Sensitive data are either not included or desensitized. Due to the storage limit of github repo, large files has been put into Google drive for future use.
 
-Please refer to this white paper and slides for a better understanding of this model. This README file will focus on how to use this tool.
+Please refer to the [white paper][whitepaper] and [slides][slides] for a better understanding of this model. This README file will focus on how to use this tool.
 
 ## How to Use
 
@@ -111,8 +111,18 @@ Within each model folder, there are many different files will be generated for e
 
  - Integrate calculating colorfulness score into the preprocessing pipeline.
 
- - Gather more human annotations (such as MTurk) and integrate them into this model. (See Discussion section in this paper)
+ - Gather more human annotations (such as MTurk) and integrate them into this model. (See Discussion section in the [whitepaper][whitepaper])
 
- - Try adding a few fully-connected layer right after getting the 2048 image features to downweight the effect of images. (See Discussion section in this paper)
+ - Try adding a few fully-connected layer right after getting the 2048 image features to downweight the effect of images. (See Discussion section in the [whitepaper][whitepaper])
 
- - Evaluate more image visualizations and try to explore a more consistent interpretation for them. (See Discussion section in this paper)
+ - Evaluate more image visualizations and try to explore a more consistent interpretation for them. (See Discussion section in the [whitepaper][whitepaper])
+
+
+
+
+
+
+
+
+[whitepaper]: https://github.com/ywang512/skid-steer-price-prediction/blob/master/docs/Duke%20Capstone%20WhitePaper%20-%20Purple%20Wave.pdf
+[slides]: https://github.com/ywang512/skid-steer-price-prediction/blob/master/docs/PurpleWave_Duke_final_presentation_draft.pdf
