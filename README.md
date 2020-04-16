@@ -6,7 +6,7 @@ Please refer to these documents for a better understanding of this model. This R
 
 ## How to Use
 
-To train a new model or evaluate an exsited model, simply use python to run `main.py`. Make sure it's in the same directory with `preprocessing`, `modeling.py`, `evaluating.py` and `utils.py`.
+To train a new model or evaluate an exsited model, simply use python to run `main.py`. Make sure it's in the same folder with `preprocessing.py`, `modeling.py`, `evaluating.py` and `utils.py`.
 
 To calculate the colorfulness score for a new dataset, please refer to the scripts in `codes/colorfulness/`.
 
@@ -70,9 +70,11 @@ These arguments determine the hyperparameters of the model.
 
 ## Output Explanation
 
-Some trained models are included in the `/models/` path. By default all the model will be named by starting time and `MODEL_SAVE_NAME`. `2020-04-15T03:01_ftrs-images` contains a model trained by using tabular features and images. `2020-04-01T20:09_ftrs-images-text` contains a model trained by using tabular features, images and comment embeddings. `2020-04-11T20:08_ftrs-images-text-sentiment` contains a model trained by using tabular features, images, comment embeddings and comment sentiment.
+Some trained models are included in the `/models/` path. By default all the model will be named by "starting time" and `MODEL_SAVE_NAME`. `2020-04-15T03:01_ftrs-images` contains a model trained by using tabular features and images. `2020-04-01T20:09_ftrs-images-text` contains a model trained by using tabular features, images and comment embeddings. `2020-04-11T20:08_ftrs-images-text-sentiment` contains a model trained by using tabular features, images, comment embeddings and comment sentiment.
 
 Within each model folder, there are many different files will be generated for each training run.
+
+ - `eval_visualizations` contains all the output visualizations for the specific images. All output visualizations are named by combining "unique id" and the type of visualization. `cam` stands for classificaiton attention mapping and `gb` stands for guided backproporgation (saliency) mapping.
 
  - `all_records.pickle` is a pickle file containing a dictionary of all statistics (loss, MAE and MAEP) for each epochs.
 
