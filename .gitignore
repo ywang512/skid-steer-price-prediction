@@ -6,6 +6,7 @@ data/SkidSteer_2019-08.xlsx
 
 # torch model files
 *.pt
+*.bin
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
