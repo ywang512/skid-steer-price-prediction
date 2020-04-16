@@ -11,22 +11,21 @@ Todo:
 """
 
 import os
+import pickle
 import logging
 from collections import Counter
 
 import numpy as np
 import pandas as pd
 from sklearn import preprocessing
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
-### Logging
-FORMAT = '%(asctime)-15s %(levelname)s [%(name)s] %(message)s'
-logging.basicConfig(format=FORMAT)
-LOGGER = logging.getLogger('Preprocess')
-LOGGER.setLevel("INFO")
+from utils import getLogger, getEmbedModel, getEmbed
+
 
 ### Local Parameters
 COLUMN_NAMES = ['Unique_ID', 'Winning Bid', 'Hours Final', 'Age at Sale (bin)',
-                'Bucket', 'Engine', 'Tires', 'Transmission']
+                'Bucket', 'Engine', 'Tires', 'Transmission', 'details remaining']
 RENAME_SCHEMA = {
     'Unique_ID': "unique_id",
     'Hours Final': "hours_final",
@@ -36,11 +35,14 @@ RENAME_SCHEMA = {
     'Engine': "engine",
     'Tires': "tires",
     'Transmission': "transmission",
+    'details remaining': "details_remaining",
     'socre': "colorfulness_score"
 }
 
-def csv2csv(raw_filepath, score_filepath, image_root, train_filepath, val_filepath, random_seed):
+def csv2pickle(raw_filepath, score_filepath, image_root, train_filepath, val_filepath, model_save_path, random_seed):
     '''Join raw csv files into one master csv, with normalization and train-test-split.'''
+    global LOGGER
+    LOGGER = getLogger(name="Preprocess", model_save_path=model_save_path)
     LOGGER.info("Read raw csv")
     raw_df = pd.read_csv(raw_filepath, index_col=1)
     LOGGER.info("Read score csv")
@@ -51,17 +53,20 @@ def csv2csv(raw_filepath, score_filepath, image_root, train_filepath, val_filepa
     transform_df(processed_df)
     scaler_dict = normalize_df(processed_df)
     add_binary_bucket(processed_df)
+    part_sentiment_df(processed_df, ['bucket', 'engine', 'tires', 'transmission'])
+    add_embeddings_df(processed_df, model_save_path)
 
     train_df, val_df = split_train_val(processed_df, random_seed)
-    train_df.to_csv(train_filepath)
-    val_df.to_csv(val_filepath)
+    #train_df.to_csv(train_filepath)
+    #val_df.to_csv(val_filepath)
+    pickle.dump(train_df, open(train_filepath, "wb"))
+    pickle.dump(val_df, open(val_filepath, "wb"))
     return scaler_dict
 
 
 def clean_df(raw_df, score_df, image_root):
     '''Merge, rename columns and remove certain illegal rows.'''
     LOGGER.info("Rename columns")
-
     processed_df = raw_df.copy()
     processed_df['Unique_ID'] = processed_df[['Source', 'item#']].apply(lambda x: '_'.join(x), axis=1)
     processed_df = processed_df.filter(COLUMN_NAMES, axis=1)
@@ -130,13 +135,74 @@ def normalize_df(data):
 
 def add_binary_bucket(data):
     '''Add a column indicating whether it has bucket related words in bucket column.'''
-    LOGGER.info("Add column \"bucket_bin\"")
-    data.insert(7, column="bucket_bin", value=0)
+    LOGGER.info("Add column \"bucket_binary\"")
+    data.insert(7, column="bucket_binary", value=0)
     data.loc[
         ~data["bucket"].isna() &
         data["bucket"].str.contains("bucket", case=False) |
-        data["bucket"].str.contains("bkt", case=False), "bucket_bin"
+        data["bucket"].str.contains("bkt", case=False), "bucket_binary"
     ] = 1
+    return None
+
+
+def part_sentiment_df(data, parts):
+    for part in parts:
+        part_sentiment_name = part + "_sentiment"
+        data[part_sentiment_name] = ""
+        analyzer = SentimentIntensityAnalyzer()
+        list_indices = np.where(~data[part].isnull())[0]
+        for indice in list_indices:
+            sentence = data[part].tolist()[indice]
+            if len(sentence)>100:  #pick up only very strong signals
+                vs = analyzer.polarity_scores(sentence)
+                lb = vs['compound']
+                if lb >= 0.05:
+                    score = 1
+                elif (lb > -0.05) and (lb < 0.05):
+                    score = 0
+                else:
+                    score = -1
+                data[part_sentiment_name][indice] = score
+            else:
+                data[part_sentiment_name][indice] = 0
+        data[part_sentiment_name] = pd.to_numeric(data[part_sentiment_name]).fillna(0)
+
+
+def add_embeddings_df(data, model_save_path):
+    '''Compute, save and add embeddings of detais_remaining to the dataframe'''
+    LOGGER.info("Producing text embeddings on details_remaining")
+    sources = ['rbauct','big','iron','PW']
+    list_embed = []
+    list_index = []
+    for source in sources:
+        getEmbedModel(data, source, model_save_path)
+        sentence_embedding, index = getEmbed(data, source, model_save_path)
+        list_embed += sentence_embedding
+        list_index += index
+    index_nan = set(data.index) - set(list_index)
+
+    LOGGER.info("Add %d column \"details_remaining_source\"" % len(sources))
+    for source in sources:
+        data.insert(len(data.columns), "details_remaining_source_"+source, 0)
+    for ii, name_id in enumerate(data.unique_id):
+        if name_id.startswith(sources[0]):
+            data.iloc[ii, -4] = 1
+        elif name_id.startswith(sources[1]):
+            data.iloc[ii, -3] = 1
+        elif name_id.startswith(sources[2]):
+            data.iloc[ii, -2] = 1
+        elif name_id.startswith(sources[3]):
+            data.iloc[ii, -1] = 1
+
+    LOGGER.info("Add column \"details_remaining_nan\"")
+    data.insert(len(data.columns), "details_remaining_nan", 0)
+    data.loc[data["details_remaining"].isna(), "details_remaining_nan"] = 1
+
+    LOGGER.info("Add column \"details_remaining_embedding\"")
+    embeds_median = np.median(np.array(list_embed), axis=0)
+    embeds = {index:embed for index, embed in zip(list_index, list_embed)}
+    embeds_list = [embeds[ii] if ii not in index_nan else embeds_median for ii in data.index]
+    data.insert(len(data.columns), "details_remaining_embedding", embeds_list)
     return None
 
 

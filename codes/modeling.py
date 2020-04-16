@@ -15,22 +15,17 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from torchvision import transforms, models, utils
 
-from utils import SkidSteerDataset, PriceModel, compute_price_loss
-
-### Logging
-FORMAT = '%(asctime)-15s %(levelname)s [%(name)s] %(message)s'
-logging.basicConfig(format=FORMAT)
-LOGGER = logging.getLogger('Train')
-LOGGER.setLevel("INFO")
+from utils import getLogger, SkidSteerDataset, PriceModel, compute_price_loss
 
 
-def init_datasets(train_filepath, val_filepath, image_root, col_ids, transform, batch_size):
+def init_datasets(train_filepath, val_filepath, image_root, num_col_ids, array_col_id, transform, batch_size):
     '''Initiate datasets.'''
     csv_file = {"train": train_filepath,
                 "val": val_filepath}
     datasets = {x: SkidSteerDataset(csv_file=csv_file[x],
                                     img_root=image_root,
-                                    col_ids=col_ids,
+                                    num_col_ids=num_col_ids,
+                                    array_col_id=array_col_id,
                                     transform=transform[x])
                 for x in ["train", "val"]}
     dataloaders = {x: DataLoader(datasets[x], 
@@ -42,8 +37,10 @@ def init_datasets(train_filepath, val_filepath, image_root, col_ids, transform, 
 
 
 def train_model(dataloaders, dataset_sizes, model, criterion, optimizer, 
-                scheduler, num_epochs, device, min_max_scaler):
+                scheduler, num_epochs, device, min_max_scaler, model_save_path):
     '''Train models.'''
+    LOGGER = getLogger(name="Train", model_save_path=model_save_path)
+
     since = time.time()
     best_model_wts = copy.deepcopy(model.state_dict())
     best_epoch = None
@@ -143,7 +140,6 @@ def train_model(dataloaders, dataset_sizes, model, criterion, optimizer,
 
 def save_model(model_save_path, model, all_records, best_records, scaler_dict):
     '''Save model and training statistics to the given path.'''
-    os.makedirs(model_save_path)
     model_path = os.path.join(model_save_path, "model.pt")
     all_records_path = os.path.join(model_save_path, "all_records.pickle")
     best_records_path = os.path.join(model_save_path, "best_records.pickle")
@@ -151,7 +147,7 @@ def save_model(model_save_path, model, all_records, best_records, scaler_dict):
     torch.save(model, model_path)
     pickle.dump(all_records, open(all_records_path, "wb"))
     pickle.dump(best_records, open(best_records_path, "wb"))
-    pickle.dump(scaler_dict_path, open(scaler_dict_path, "wb"))
+    pickle.dump(scaler_dict, open(scaler_dict_path, "wb"))
     return None
 
 

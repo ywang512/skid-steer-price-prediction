@@ -4,6 +4,7 @@ import logging
 from copy import deepcopy
 
 import numpy as np
+import pandas as pd
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from scipy.ndimage.interpolation import zoom
@@ -14,13 +15,7 @@ from torch.optim import lr_scheduler
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms, models, utils
 
-from utils import norm2price
-
-### Logging
-FORMAT = '%(asctime)-15s %(levelname)s [%(name)s] %(message)s'
-logging.basicConfig(format=FORMAT)
-LOGGER = logging.getLogger('Evaluate')
-LOGGER.setLevel("INFO")
+from utils import getLogger, norm2price
 
 
 class CamExtractor():
@@ -148,7 +143,7 @@ class GuidedBackprop():
         return (image_gradients_norm1, image_gradients_norm2, image_gradients_norm3), model_output
 
 
-def make_CAM_plots(original_image, cam, original_price, predicted_price, idx, save_path):
+def make_CAM_plots(original_image, cam, original_price, predicted_price, unique_id, save_path):
     '''Make plots for Classification Attention Maps visualization.'''
     fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(10.1, 5), gridspec_kw={'width_ratios': [5, 5, 0.1]})
     ax1.imshow(invTrans(original_image.squeeze()).detach().permute(1, 2, 0))
@@ -162,13 +157,40 @@ def make_CAM_plots(original_image, cam, original_price, predicted_price, idx, sa
     cmap = mpl.cm.RdYlGn
     norm = mpl.colors.Normalize(vmin=-1, vmax=1)
     cb1 = mpl.colorbar.ColorbarBase(ax3, cmap=cmap, norm=norm, orientation='vertical')
-    plt.suptitle("Real price: %d   ~   Predicted: %.2f" % (original_price, predicted_price))
-    image_path = os.path.join(save_path, str(idx) + "_cam.png")
+    plt.suptitle("Real price: %d   ~   Predicted: %d" % (original_price, np.round(predicted_price)))
+    image_path = os.path.join(save_path, str(unique_id) + "-cam.png")
     plt.savefig(image_path)
     return None
 
 
-def make_all_plots(original_image, cam, guided_grads, original_price, predicted_price, idx, save_path):
+def make_GB_plots(guided_grads, original_price, predicted_price, unique_id, save_path):
+    '''Make plots for all visualization.'''
+    fig, axs = plt.subplots(2, 2, figsize=(10, 10))
+    (ax1, ax2, ax3, ax4) = axs.flatten()
+    ax1.imshow(guided_grads[0], cmap="gray")
+    ax1.set_title("Monochromatic")
+    ax1.set_xticks([])
+    ax1.set_yticks([])
+    ax2.imshow(guided_grads[2].transpose(1, 2, 0))
+    ax2.set_title("Colorful")
+    ax2.set_xticks([])
+    ax2.set_yticks([])
+    ax3.imshow(np.minimum(guided_grads[1], 0), cmap="RdYlGn", vmin=guided_grads[1].min(), vmax=-guided_grads[1].min())
+    ax3.set_title("Negative")
+    ax3.set_xticks([])
+    ax3.set_yticks([])
+    ax4.imshow(np.maximum(guided_grads[1], 0), cmap="RdYlGn", vmin=-1, vmax=1)
+    ax4.set_title("Positive")
+    ax4.set_xticks([])
+    ax4.set_yticks([])
+    fig.suptitle("  Real price: %d   ~   Predicted: %d" % (original_price, np.round(predicted_price)), size=16)
+    fig.subplots_adjust(top=0.94)
+    image_path = os.path.join(save_path, str(unique_id) + "-gb.png")
+    plt.savefig(image_path)
+    return None
+
+
+def make_all_plots(original_image, cam, guided_grads, original_price, predicted_price, unique_id, save_path):
     '''Make plots for all visualization.'''
     fig, axs = plt.subplots(3, 2, figsize=(10, 15))
     (ax1, ax2, ax3, ax4, ax5, ax6) = axs.flatten()
@@ -196,18 +218,42 @@ def make_all_plots(original_image, cam, guided_grads, original_price, predicted_
     ax6.set_title("Positive")
     ax6.set_xticks([])
     ax6.set_yticks([])
-    fig.suptitle("  Real price: %d   ~   Predicted: %d" % (original_price, round(predicted_price)), size=16)
+    fig.suptitle("  Real price: %d   ~   Predicted: %d" % (original_price, np.round(predicted_price)), size=16)
     fig.subplots_adjust(top=0.94)
-    image_path = os.path.join(save_path, str(idx) + "_all.png")
+    image_path = os.path.join(save_path, str(unique_id) + "-all.png")
     plt.savefig(image_path)
     return None
 
 
+def evaluate_model_price(model, device, datasets, phase, scaler_dict, pickle_filepath, model_load_path):
+    '''Output orginal and predicted price to a new csv file.'''
+    LOGGER = getLogger(name="Evaluate", model_save_path=model_load_path)
+    LOGGER.info("Predicting price on %s dataset" % phase)
+    model = deepcopy(model).to(device)
+    model.eval()
+    ori_price = []
+    pre_price = []
+    for ii in range(len(datasets[phase])):
+        price = datasets[phase][ii]["price"]
+        image = datasets[phase][ii]["image"].unsqueeze(dim=0).to(device)
+        ftrs = datasets[phase][ii]["ftrs"].unsqueeze(dim=0).to(device)
+        outputs = model(image, ftrs)
+        pre_price.append(norm2price(outputs, scaler_dict["winning_bid"]).flatten()[0])
+        ori_price.append(norm2price(torch.tensor(price), scaler_dict["winning_bid"]).flatten()[0])
+
+    df = pickle.load(open(pickle_filepath, "rb"))
+    df.insert(len(df.columns), "original_price", np.array(ori_price))
+    df.insert(len(df.columns), "predicted_price", np.array(pre_price))
+    pickle_savepath = os.path.join(model_load_path, "results_"+phase+".csv")
+    pickle.dump(df, open(pickle_savepath, "wb"))
+    LOGGER.info("Save result pickled csv to %s" % pickle_savepath)
+    return None
 
 
-def evaluate_model_one(model, dataset, idx, scaler, save_path):
+def evaluate_network_one(model, dataset, idx, scaler, save_path, LOGGER):
     '''Evaluate model performance on one image.'''
-    price = dataset[idx]["price"]
+    unique_id = dataset[idx]["unique_id"]
+    price = torch.tensor(dataset[idx]["price"])
     image = dataset[idx]["image"].unsqueeze(dim=0)
     ftrs = dataset[idx]["ftrs"].unsqueeze(dim=0)
 
@@ -216,19 +262,22 @@ def evaluate_model_one(model, dataset, idx, scaler, save_path):
     cam, model_price1 = gradcam.generate_cam(image, ftrs, target_price=price)
     guided_grads, model_price2 = guidedbackprop.generate_gradients(image, ftrs, target_price=price)
     if model_price1 != model_price2:
-        LOGGER.warning("unmatched price at idx = %d" % idx)
+        LOGGER.warning("unmatched price at unique_id = %s" % unique_id)
 
-    # original_price = norm2price(price, scaler).flatten()
-    # model_price = norm2price(model_price1, scaler).squeeze()
-    original_price = price
-    model_price = float(model_price1)
-    make_CAM_plots(image, cam, original_price, model_price, idx, save_path)
-    make_all_plots(image, cam, guided_grads, original_price, model_price, idx, save_path)
-    LOGGER.info("Visualization idx = %d saved to %s" % (idx, save_path))
+    original_price = norm2price(price, scaler).flatten()
+    model_price = norm2price(model_price1, scaler).squeeze()
+    # original_price = price
+    # model_price = float(model_price1)
+    make_CAM_plots(image, cam, original_price, model_price, unique_id, save_path)
+    make_GB_plots(guided_grads, original_price, model_price, unique_id, save_path)
+    # make_all_plots(image, cam, guided_grads, original_price, model_price, idx, save_path)
+    LOGGER.info("Visualization unique_id = %s (idx = %d) saved to %s" % (unique_id, idx, save_path))
     return None
 
 
-def evaluate_model(model, dataset, idxs, scaler, save_path):
+def evaluate_model(model, dataset, idxs, scaler, save_path, model_load_path):
+    '''Generate CAM and GB maps for specific images.'''
+    LOGGER = getLogger(name="Evaluate", model_save_path=model_load_path)
     global invTrans 
     invTrans = transforms.Compose([
         transforms.Normalize(mean=[ 0., 0., 0. ], std=[ 1/0.229, 1/0.224, 1/0.225 ]),
@@ -237,7 +286,7 @@ def evaluate_model(model, dataset, idxs, scaler, save_path):
 
     LOGGER.info("Evaluate on ids = %s" % idxs)
     for idx in idxs:
-        evaluate_model_one(model, dataset, idx, scaler, save_path)
+        evaluate_network_one(model, dataset, idx, scaler, save_path, LOGGER)
     LOGGER.info("Evaluation finish")
     return None
 
